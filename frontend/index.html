@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知识库智能问答</title>
+<style>
+  /* ====================================================
+     全局变量：仿 Codex 桌面端配色
+     --bg      主区域背景（近白）
+     --side    侧边栏背景（比主区域略灰一点，截图里侧栏更暗）
+     --line    分隔线/描边
+     --txt     正文深灰
+     --mut     次要文字灰
+     --accent  发送按钮的橙色圆钮（截图右下角）
+     ==================================================== */
+  :root{
+    --bg:#ffffff; --side:#f9f9f8; --line:#e8e8e6; --line2:#ececea;
+    --txt:#333330; --mut:#9b9b97; --mut2:#b5b5b0;
+    --accent:#f5693c; --accent-h:#e55a2e;
+    --chipbg:#f2f2ef;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
+       background:var(--bg);color:var(--txt);line-height:1.6;overflow:hidden}
+  button{cursor:pointer;border:none;background:none;font-family:inherit}
+  .hidden{display:none!important}
+
+  /* ===================== 布局骨架：左栏 + 主区 ===================== */
+  .app{display:flex;height:100vh}
+  aside{width:208px;min-width:208px;background:var(--side);border-right:1px solid var(--line2);
+        display:flex;flex-direction:column}
+  main{flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden}
+
+  /* ===================== 侧边栏 ===================== */
+  .sb-head{display:flex;align-items:center;gap:4px;padding:14px 12px 10px}
+  .sb-title{font-weight:700;font-size:14px;letter-spacing:.2px}
+  .sb-title .caret{color:var(--mut);font-size:10px;margin-left:2px}
+  .sb-head .sp{flex:1}
+  .ic-btn{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--mut)}
+  .ic-btn:hover{background:#efefec}
+  .sb-nav{padding:4px 8px}
+  .sb-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+           padding:6px 8px;border-radius:8px;font-size:13px;color:var(--txt)}
+  .sb-item:hover{background:#efefec}
+  .sb-item svg{width:15px;height:15px;color:#6f6f6b;flex:none}
+  .sb-sec{padding:14px 16px 4px;font-size:12px;color:var(--mut)}
+  .sb-foot{margin-top:auto;display:flex;align-items:center;gap:7px;padding:12px 14px;border-top:1px solid var(--line2)}
+  .sb-foot .name{font-size:13px;color:#55554f}
+  .sb-foot .sp{flex:1}
+  .avatar{width:20px;height:20px;border-radius:50%;background:#3b82f6;color:#fff;font-size:10px;
+          display:flex;align-items:center;justify-content:center;font-weight:600}
+
+  /* ===================== 主区空状态（我们要构建什么?） ===================== */
+  #emptyState{position:absolute;inset:0 0 180px 0;display:flex;flex-direction:column;
+              align-items:center;justify-content:center;pointer-events:none}
+  #emptyState .logo{width:52px;height:52px;color:#d7d7d2;margin-bottom:18px}
+  #emptyState h1{font-size:26px;font-weight:600;margin:0;color:#4a4a45;letter-spacing:.5px}
+
+  /* ===================== 会话区（提问后替换空状态） ===================== */
+  #chatWrap{flex:1;overflow-y:auto;padding:36px 24px 12px}
+  .col{max-width:720px;margin:0 auto}
+  .q-bubble{margin-left:auto;width:fit-content;max-width:78%;background:#f3f3f0;border:1px solid var(--line2);
+            border-radius:14px;padding:9px 14px;font-size:14px;margin-bottom:14px;white-space:pre-wrap}
+  .a-block{font-size:14.5px;padding-bottom:26px;margin-bottom:20px;border-bottom:1px solid #f1f1ee}
+  .a-block.info{border-bottom:none;padding-bottom:8px}
+  .flow{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+  .chip{background:var(--chipbg);color:#7a7a74;border:1px solid var(--line2);padding:2px 10px;
+        border-radius:999px;font-size:12px}
+  .evid{font-size:12px;color:var(--mut);white-space:pre-wrap;background:#fafaf8;border:1px solid var(--line2);
+        border-radius:10px;padding:10px 12px;max-height:220px;overflow:auto;margin:0 0 10px;font-family:inherit}
+  .ans{line-height:1.75}
+  .ans p{margin:0 0 8px}
+  .ans h4{margin:12px 0 6px;font-size:15px}
+  .ans ul{margin:6px 0 12px;padding-left:20px}
+  .ans li{margin-bottom:4px}
+  .meta{font-size:12.5px;color:var(--mut);margin-top:8px}
+  .kb{font-size:12px;color:var(--mut)}
+
+  /* ===================== 底部输入区（Codex 风格输入卡片） ===================== */
+  #composerArea{flex:none;margin-top:auto;padding:8px 24px 22px;background:linear-gradient(transparent,var(--bg) 34%)}
+  /* margin-top:auto：flex 列布局下把输入框压到容器底部——
+     首次打开（#chatWrap 隐藏、无兄弟占位）时输入框不再顶到页面顶部 */
+  .composer-col{max-width:720px;margin:0 auto}
+  /* 顶部小胶囊：仿截图的"选择项目"小条 */
+  .pillrow{display:flex;gap:8px;margin-bottom:8px}
+  .pill{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);
+        border-radius:10px;padding:5px 12px;font-size:12.5px;color:#8a8a84;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .pill:hover{border-color:#d8d8d3}
+  .pill.on{color:var(--txt);border-color:#d8d8d3}
+  .pill .dot{width:7px;height:7px;border-radius:50%;background:#c9c9c3}
+  .pill.toggled{background:#fff4ef;border-color:#f8c9b4;color:var(--accent-h)}
+  /* 大输入卡片 */
+  .composer{background:#fff;border:1px solid var(--line);border-radius:16px;
+            box-shadow:0 4px 16px rgba(0,0,0,.05);padding:12px 14px 10px}
+  .composer textarea{width:100%;border:none;outline:none;resize:none;font-family:inherit;
+                     font-size:14.5px;color:var(--txt);line-height:1.6;max-height:140px;background:transparent}
+  .composer textarea::placeholder{color:var(--mut2)}
+  .composer-foot{display:flex;align-items:center;gap:10px;margin-top:6px}
+  .plus-btn{width:26px;height:26px;border-radius:8px;border:1px solid var(--line);display:flex;
+            align-items:center;justify-content:center;color:#8a8a84;font-size:16px;background:#fff}
+  .plus-btn:hover{border-color:#d8d8d3}
+  .hint-btn{font-size:12.5px;color:var(--mut2);display:flex;align-items:center;gap:5px}
+  .hint-btn:hover{color:#8a8a84}
+  .composer-foot .sp{flex:1}
+  .model{font-size:12.5px;color:var(--mut)}
+  .send{width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;
+        display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(245,105,60,.35)}
+  .send:hover{background:var(--accent-h)}
+  .send svg{width:15px;height:15px}
+
+  /* 滚动条弱化 */
+  #chatWrap::-webkit-scrollbar{width:8px}
+  #chatWrap::-webkit-scrollbar-thumb{background:#e2e2dd;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===================== 左侧栏 ===================== -->
+  <aside>
+    <div class="sb-head">
+      <span class="sb-title">私人助手 <span class="caret">▼</span></span>
+      <span class="sp"></span>
+      <button class="ic-btn" title="搜索（装饰）">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      </button>
+      <button class="ic-btn" title="通知（装饰）">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+      </button>
+    </div>
+    <nav class="sb-nav">
+      <button class="sb-item" onclick="newChat()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 01-8 8H5l-2 2V12a8 8 0 018-8h2a8 8 0 018 8z"/></svg>
+        新对话
+      </button>
+      <button class="sb-item" onclick="showProfile()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+        用户画像
+      </button>
+      <button class="sb-item" onclick="showAudit()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-5"/><circle cx="12" cy="12" r="9"/></svg>
+        决策链
+      </button>
+      <button class="sb-item" onclick="runEval()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 3 8-8"/><path d="M14 7h6v6"/></svg>
+        RAG 评测
+      </button>
+      <button class="sb-item" onclick="pickFile()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        上传知识库
+      </button>
+    </nav>
+    <div class="sb-sec">最近</div>
+    <div class="sb-nav" id="recentList"><div class="sb-item" style="color:var(--mut2);cursor:default">无聊天</div></div>
+    <div class="sb-foot">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#8a8a84" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+      <span class="name">deepseek</span>
+      <span class="sp"></span>
+      <span class="avatar">AI</span>
+    </div>
+  </aside>
+
+  <!-- ===================== 主区域 ===================== -->
+  <main>
+    <!-- 空状态：居中 logo + 标语 -->
+    <div id="emptyState">
+      <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M17.5 18a4.5 4.5 0 000-9 6 6 0 00-11.4 1.6A4 4 0 006.5 18h11z"/>
+        <circle cx="10" cy="13.4" r=".9" fill="currentColor" stroke="none"/>
+        <circle cx="14" cy="13.4" r=".9" fill="currentColor" stroke="none"/>
+      </svg>
+      <h1>我们要构建什么？</h1>
+    </div>
+
+    <!-- 会话流：提问后显示，滚动区域 -->
+    <div id="chatWrap" class="hidden"><div class="col" id="chatLog"></div></div>
+
+    <!-- 底部输入区 -->
+    <div id="composerArea">
+      <div class="composer-col">
+        <div class="pillrow">
+          <!-- 仿截图"选择项目"小胶囊：这里显示当前知识库 -->
+          <span class="pill on">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+            知识库
+          </span>
+          <!-- 链路胶囊：点击在 快速 / 多 Agent 之间切换 -->
+          <button class="pill on" id="modePill" onclick="toggleMode()" title="点击切换问答链路">⚡ 快速</button>
+          <!-- 缓存胶囊：点击开/关"不用缓存" -->
+          <button class="pill" id="cachePill" onclick="toggleCache()" title="开启后不读也不写答案缓存，便于对比检索效果">不用缓存</button>
+        </div>
+        <div class="composer">
+          <textarea id="q" rows="1" placeholder="随心输入，问问知识库里的内容…"></textarea>
+          <div class="composer-foot">
+            <button class="plus-btn" onclick="pickFile()" title="上传文档入库">＋</button>
+            <button class="hint-btn" onclick="showAudit()" title="查看可追溯决策链（最近 20 条）">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              读决策链
+            </button>
+            <span class="sp"></span>
+            <span class="model">DeepSeek V4 Flash 高</span>
+            <button class="send" onclick="ask()" title="提问">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 隐藏的真实文件选择器：侧栏/＋号都会触发它 -->
+    <input id="file" type="file" accept=".pdf,.docx,.pptx,.xlsx,.xls,.txt,.md,.png,.jpg,.jpeg" class="hidden" onchange="doIngest(this)">
+  </main>
+</div>
+
+<script>
+const api = '';
+// ============================================================
+//  一、文本格式化（沿用原逻辑不动）
+// ============================================================
+// 把 LLM 返回的 Markdown 风格文本清理成干净 HTML：去空行、去 --- 分隔线、转列表/加粗
+// HTML 转义：LLM 答案会复述上传文档里的内容，文档含 <img onerror=...> 时不转义就是存储型 XSS
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function formatAnswer(text){
+  if(!text) return '（无回答）';
+  // v2：先整体转义再做 Markdown 转换——转换只注入我们自己的标签，顺序颠倒会把转义符打乱
+  let s = escHtml(text);
+  s = s.replace(/^[\s]*[-_*]{3,}[\s]*$/gm, '');   // 去独立分隔线
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); // **加粗** → <strong>
+  const lines = s.split('\n');
+  const out = [];
+  let inList = false;
+  for(let line of lines){
+    const trimmed = line.trim();
+    if(!trimmed){   // 空行最多保留一个
+      if(out.length && out[out.length-1] !== '<p></p>') out.push('<p></p>');
+      continue;
+    }
+    if(/^#{1,6}\s+/.test(trimmed)){   // ### 标题 → <h4>
+      out.push('<h4>'+trimmed.replace(/^#{1,6}\s+/, '')+'</h4>');
+      continue;
+    }
+    if(/^[-*]\s+/.test(trimmed)){     // "- " 列表项 → <ul><li>
+      if(!inList){ out.push('<ul>'); inList = true; }
+      out.push('<li>'+trimmed.replace(/^[-*]\s+/, '')+'</li>');
+      continue;
+    }
+    if(inList){ out.push('</ul>'); inList = false; }
+    if(/^\d+\.\s+/.test(trimmed)){ out.push('<p>'+trimmed+'</p>'); continue; }
+    out.push('<p>'+trimmed+'</p>');
+  }
+  if(inList) out.push('</ul>');
+  return out.join('').replace(/(<p><\/p>)+/g, '<p></p>');
+}
+// 流式阶段专用：容忍"写了一半"的 Markdown，避免打出 ### / ** 原始符号
+function formatStream(text){
+  if(!text) return '';
+  let s = text;
+  if(((s.match(/\*\*/g) || []).length) % 2 === 1) s = s.replace(/\*\*[^*]*$/, ''); // 未闭合加粗先隐藏
+  s = s.replace(/(^|\n)#{1,6}\s*$/, '');  // 残留标题符号整行去掉
+  s = s.replace(/(^|\n)\s*[-*]\s*$/, ''); // 残留列表符号整行去掉
+  return formatAnswer(s);
+}
+
+// ============================================================
+//  二、会话流 UI：把原来的固定卡片改成"每问一答一个块"
+//  cur 指向当前正在输出的回答块，各事件往 cur 里写
+// ============================================================
+let cur = null;             // 当前回答块的元素引用集合 {flow, evid, ans, time, hit, block}
+let es = null;              // 当前 SSE 连接（重新提问前先关掉）
+let streamBuf = '';         // 累积的流式回答全文
+let streamDone = false;     // 是否已收到 done（区分正常结束与连接中断）
+let renderPending = false;  // rAF 节流标记
+let nodeTimings = {};       // 各节点耗时（毫秒）
+let perfInfo = '';          // "首字 x.xs · 总 y.ys" 文案
+
+function scrollBottom(){
+  const w = document.getElementById('chatWrap');
+  w.scrollTop = w.scrollHeight;
+}
+// 在会话流里追加一个用户气泡 + 空回答块，并让 cur 指向它
+function appendQA(question){
+  document.getElementById('emptyState').classList.add('hidden');
+  document.getElementById('chatWrap').classList.remove('hidden');
+  const log = document.getElementById('chatLog');
+  const qa = document.createElement('div');
+  qa.innerHTML =
+    '<div class="q-bubble"></div>' +
+    '<div class="a-block">' +
+      '<div class="flow"></div>' +
+      '<pre class="evid hidden"></pre>' +
+      '<div class="ans"></div>' +
+      '<div class="meta time"></div>' +
+      '<div class="meta hit"></div>' +
+    '</div>';
+  qa.querySelector('.q-bubble').textContent = question;
+  log.appendChild(qa);
+  cur = {
+    block: qa.querySelector('.a-block'),
+    flow:  qa.querySelector('.flow'),
+    evid:  qa.querySelector('.evid'),
+    ans:   qa.querySelector('.ans'),
+    time:  qa.querySelector('.time'),
+    hit:   qa.querySelector('.hit'),
+  };
+  cur.ans.innerHTML = '<p>思考中…</p>';
+  scrollBottom();
+}
+// 在会话流里追加一个纯信息块（画像 / 决策链 / 评测 / 上传结果）
+function appendInfo(title, text){
+  document.getElementById('emptyState').classList.add('hidden');
+  document.getElementById('chatWrap').classList.remove('hidden');
+  const log = document.getElementById('chatLog');
+  const div = document.createElement('div');
+  div.className = 'a-block info';
+  const h = document.createElement('h4');
+  h.textContent = title;
+  const pre = document.createElement('pre');
+  pre.className = 'evid';
+  pre.style.maxHeight = '320px';
+  pre.textContent = text;
+  div.appendChild(h); div.appendChild(pre);
+  log.appendChild(div);
+  scrollBottom();
+  return pre;
+}
+function renderTimings(){
+  const parts = Object.entries(nodeTimings).map(([n, ms])=> n+' '+ms+'ms');
+  const detail = parts.length ? '　|　节点耗时：'+parts.join(' · ') : '';
+  cur.time.textContent = (perfInfo || '') + detail;
+}
+function scheduleRender(){
+  if(renderPending) return;
+  renderPending = true;
+  requestAnimationFrame(()=>{
+    renderPending = false;
+    const html = formatStream(streamBuf);
+    cur.ans.innerHTML = (html && html !== '（无回答）') ? html : '<p>思考中…</p>';
+    scrollBottom();
+  });
+}
+
+// ============================================================
+//  三、提问主流程（SSE 逻辑沿用原版，仅把写目标换成 cur）
+// ============================================================
+async function ask(){
+  const input = document.getElementById('q');
+  const q = input.value.trim();
+  if(!q) return;
+  input.value = ''; input.style.height = 'auto';
+  if(es){ es.close(); es = null; }
+  appendQA(q);
+  streamBuf = ''; streamDone = false;
+  nodeTimings = {}; perfInfo = '';
+  // 会话标识：本标签页一个 sessionId，多轮指代消解依赖它；关标签页即换新会话
+  let sessionId = sessionStorage.getItem('rag_session_id');
+  if(!sessionId){
+    sessionId = 'sess-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
+    sessionStorage.setItem('rag_session_id', sessionId);
+  }
+  const mode = window._mode || 'fast';
+  const nocache = window._nocache ? 1 : 0;
+  cur.evid.classList.add('hidden');
+  // SSE 走 GET + EventSource：浏览器原生自动重连、逐帧触发 onmessage
+  es = new EventSource(api+'/ask_stream?question='+encodeURIComponent(q)+'&mode='+mode+'&nocache='+nocache
+                      +'&session_id='+encodeURIComponent(sessionId));
+  convTouch(q);
+  es.onmessage = (e)=>{
+    let d;
+    try{ d = JSON.parse(e.data); }catch(err){ return; }
+    if(d.type === 'node'){
+      cur.flow.insertAdjacentHTML('beforeend', '<span class="chip">'+d.name+'</span>');
+    }else if(d.type === 'plan'){
+      cur.evid.textContent = '查询分解（多意图）→ 子查询：\n' + (d.subs||[]).map((s,i)=>'  '+(i+1)+'. '+s).join('\n');
+      cur.evid.classList.remove('hidden');
+    }else if(d.type === 'retrieval'){
+      const meta = d.meta || {};
+      const stage = meta.stage === 'bridge' ? '多跳桥接后' : '首跳检索';
+      let s = '召回证据（' + stage + '）　精排状态：' + (meta.rerank || 'n/a')
+            + (meta.top_sim != null ? '　贴合度：' + meta.top_sim : '')
+            + (meta.ms != null ? '　耗时：' + meta.ms + 'ms' : '') + '\n';
+      if((meta.subs||[]).length > 1){
+        s += '　分组配额：每组 ' + (meta.per_sub||'?') + ' 条　子查询：' + meta.subs.join(' ｜ ') + '\n';
+      }
+      const items = d.items || [];
+      if(items.some(it => it.sub)){
+        let c = 0;
+        items.forEach(it => {
+          if(it.sub !== c){ c = it.sub; s += '　【子查询' + c + '】\n'; }
+          s += '    ' + it.rank + '. [' + it.source + '] ' + it.snippet + '\n';
+        });
+      }else{
+        s += items.map(it => '  ' + it.rank + '. [' + it.source + '] ' + it.snippet).join('\n');
+      }
+      cur.evid.textContent = s;
+      cur.evid.classList.remove('hidden');
+    }else if(d.type === 'timing'){
+      nodeTimings[d.node] = d.ms;
+      renderTimings();
+    }else if(d.type === 'token'){
+      streamBuf += d.text;
+      scheduleRender();
+    }else if(d.type === 'profile' && d.hits && d.hits.length){
+      cur.hit.textContent = '召回用户画像 '+d.hits.length+' 条：'+d.hits.join('；');
+    }else if(d.type === 'done'){
+      streamDone = true;
+      cur.ans.innerHTML = formatAnswer(streamBuf);
+      const modeTag = d.mode === 'full' ? '多 Agent' : '快速';
+      let label = '· ' + modeTag + (d.query_type ? ' · 路由类型：'+d.query_type : '');
+      const src = (d.sources||[]).filter(Boolean);
+      if(src.length) label += '　|　资料来源：'+src.join('、');
+      // v2：label 里含路由类型（LLM 输出）与资料来源（上传文件名），不转义可被文件名注入
+      cur.flow.insertAdjacentHTML('beforeend', '<span class="chip">'+escHtml(label)+'</span>');
+      saveTurn(q, streamBuf, label);
+      const total = d.total_ms != null ? (d.total_ms/1000).toFixed(1)+'s' : '-';
+      if(d.cached){
+        perfInfo = '⚡ 命中缓存（'+(d.cache_hit==='semantic'?'语义近似问题':'完全相同问题')+'）· 总 '+total;
+      }else{
+        const ttft = d.ttft_ms != null ? (d.ttft_ms/1000).toFixed(1)+'s' : '-';
+        perfInfo = '首字 '+ttft+' · 总 '+total;
+      }
+      renderTimings();
+      // 会话状态：追问 / 槽位填充 / 槽位值，用于验证多轮指代消解
+      const se = d.session || {};
+      if(se.enabled){
+        const sl = se.slots || {};
+        let line = '会话：' + (se.followup ? '追问轮' : '新问题')
+                 + (se.fill_note ? '（' + se.fill_note + '）' : '')
+                 + (sl.subject ? '　槽位 subject=' + sl.subject : '　槽位为空');
+        if(se.fill_note && se.retrieval_query){ line += '　检索查询=' + se.retrieval_query; }
+        if(d.profile_scheduled){ line += '　|　长期画像：已触发后台抽取'; }
+        cur.hit.textContent += (cur.hit.textContent ? '　|　' : '') + line;
+      }
+      if(es){ es.close(); es = null; }
+      scrollBottom();
+    }else if(d.type === 'error'){
+      streamDone = true;
+      cur.ans.innerHTML = '<p>请求失败：'+escHtml(d.message)+'</p>';   // v2：异常文本同样可能含文档片段
+      if(es){ es.close(); es = null; }
+    }
+  };
+  es.onerror = ()=>{
+    if(es){ es.close(); es = null; }
+    if(!streamDone){
+      cur.ans.innerHTML = streamBuf
+        ? formatAnswer(streamBuf) + '<p class="meta">（连接中断，以上为已接收内容）</p>'
+        : '<p>请求失败：SSE 连接中断</p>';
+    }
+  };
+}
+
+// ============================================================
+//  四、侧栏三个信息面板：改为在会话流里输出结果块
+// ============================================================
+async function showProfile(){
+  const pre = appendInfo('长期记忆 · 用户画像', '（加载中…）');
+  const r = await fetch(api+'/profile'); const d = await r.json();
+  const list = (d.profiles||[]);
+  pre.textContent = list.length ? list.join('\n') : '（空，多聊几轮后会自动积累）';
+}
+async function showAudit(){
+  const pre = appendInfo('可追溯决策链（最近 20 条）', '（加载中…）');
+  const r = await fetch(api+'/audit'); const d = await r.json();
+  const rows = (d.events||[]).map(e=>'['+e.ts+'] '+e.node+'\n  in: '+e.in+'\n  out: '+e.out);
+  pre.textContent = rows.length ? rows.join('\n\n') : '（暂无）';
+}
+async function runEval(){
+  const pre = appendInfo('RAG 评测结果（LLM-as-judge）', '评测中，约需 1-2 分钟…');
+  try{
+    const r = await fetch(api+'/eval',{method:'POST'}); const d = await r.json();
+    let s = '平均：context_precision='+d.avg.context_precision.toFixed(2)
+          +'  faithfulness='+d.avg.faithfulness.toFixed(2)
+          +'  answer_relevancy='+d.avg.answer_relevancy.toFixed(2)+'\n\n';
+    s += d.rows.map(x=>'· '+x.q+'\n   precision='+x.context_precision+' faithfulness='+x.faithfulness+' relevancy='+x.answer_relevancy).join('\n');
+    pre.textContent = s;
+  }catch(e){ pre.textContent = '评测失败：'+e; }
+}
+
+// ============================================================
+//  五、知识库上传：侧栏按钮 / ＋号 → 触发隐藏文件选择器
+// ============================================================
+function pickFile(){ document.getElementById('file').click(); }
+async function doIngest(input){
+  const f = input.files[0];
+  input.value = '';   // 清空以便同名文件可重复选择
+  if(!f) return;
+  const pre = appendInfo('知识库上传 · '+f.name, '上传解析中，复杂文档约需 1~5 分钟，请勿关闭页面…');
+  const fd = new FormData();
+  fd.append('file', f);
+  try{
+    const r = await fetch(api+'/ingest',{method:'POST',body:fd});
+    const d = await r.json();
+    if(d.ok){
+      let s = '导入成功：'+d.source+' → 知识库，共 '+d.chunks+' 块'
+        +(d.status==='replaced'?'（同文件旧块已替换）':'')+'\n现在可以直接提问验证。\n\n— Agent 调用轨迹 —\n';
+      s += (d.trace||[]).join('\n');
+      pre.textContent = s;
+    }else{
+      let s = '导入失败：'+(d.error||'未知错误');
+      if(d.trace && d.trace.length) s += '\n\n— Agent 调用轨迹 —\n' + d.trace.join('\n');
+      pre.textContent = s;
+    }
+  }catch(e){ pre.textContent = '请求失败：'+e; }
+}
+
+// ============================================================
+//  六、交互小件：模式胶囊 / 缓存胶囊 / 新对话 / 最近列表
+// ============================================================
+function toggleMode(){
+  window._mode = window._mode === 'full' ? 'fast' : 'full';
+  document.getElementById('modePill').textContent = window._mode === 'full' ? '🤖 多 Agent' : '⚡ 快速';
+}
+function toggleCache(){
+  window._nocache = !window._nocache;
+  document.getElementById('cachePill').classList.toggle('toggled', window._nocache);
+}
+// 新对话：清空会话流回到空状态，sessionStorage 的 sessionId 一并清掉
+function newChat(){
+  // v2：先关进行中的 SSE——原版不关，流还没结束时点"新对话"，cur 被置空后
+  // 下一个 token 事件在 cur.ans 上抛 TypeError，onmessage 整个挂掉、本轮也存不进历史
+  if(es){ es.close(); es = null; }
+  sessionStorage.removeItem('rag_session_id');
+  document.getElementById('chatLog').innerHTML = '';
+  document.getElementById('chatWrap').classList.add('hidden');
+  document.getElementById('emptyState').classList.remove('hidden');
+  cur = null;
+}
+// ============================================================
+//  六、历史会话：按会话存完整问答，点击「最近」跳转回放
+// ============================================================
+// 存储结构（sessionStorage，关标签页即清，与后端会话态生命周期一致）：
+//   rag_convs      { convId: {id, sid, title, msgs:[{q,a,meta}], ts} }
+//   rag_conv_order [convId...] 最近优先（最多 12 个）
+//   rag_session_id 当前会话 id（同时是后端槽位会话的 key，跳转会话=切槽位上下文）
+function loadConvs(){
+  try{ return JSON.parse(sessionStorage.getItem('rag_convs') || '{}'); }catch(e){ return {}; }
+}
+function saveConvs(c){ sessionStorage.setItem('rag_convs', JSON.stringify(c)); }
+function loadOrder(){
+  try{ return JSON.parse(sessionStorage.getItem('rag_conv_order') || '[]'); }catch(e){ return []; }
+}
+function saveOrder(o){ sessionStorage.setItem('rag_conv_order', JSON.stringify(o.slice(0, 12))); }
+
+function convTouch(q){
+  // 干什么：提问时确保"当前会话"存在于存储（标题取第一问），并把它提到「最近」最上面
+  const id = sessionStorage.getItem('rag_session_id');
+  if(!id) return;                                   // 无会话 id（理论上不会发生）直接跳过
+  const convs = loadConvs();
+  if(!convs[id]){
+    convs[id] = {id, sid: id, title: (q || '新对话').slice(0, 20), msgs: [], ts: Date.now()};
+  }
+  convs[id].ts = Date.now();
+  saveConvs(convs);
+  const order = loadOrder().filter(x => x !== id);
+  order.unshift(id);
+  saveOrder(order);
+  renderRecent();
+}
+function saveTurn(q, a, meta){
+  // 干什么：回答完成后把这一轮（问题/答案/元信息标签）追加进当前会话
+  const id = sessionStorage.getItem('rag_session_id');
+  if(!id || !a) return;
+  const convs = loadConvs();
+  if(!convs[id]){
+    convs[id] = {id, sid: id, title: (q || '').slice(0, 20), msgs: [], ts: Date.now()};
+  }
+  convs[id].msgs.push({q, a, meta: meta || '', ts: Date.now()});
+  convs[id].ts = Date.now();
+  saveConvs(convs);
+  renderRecent();
+}
+function openConv(id){
+  // 干什么：点击「最近」的某条 → 切换 sessionId（后端槽位上下文跟着切）并重放该会话全部问答
+  const conv = loadConvs()[id];
+  if(!conv) return;
+  if(es){ es.close(); es = null; }   // v2：同 newChat——切换会话前先断流，避免旧回调写到已清空的 DOM
+  sessionStorage.setItem('rag_session_id', conv.sid);
+  const log = document.getElementById('chatLog');
+  log.innerHTML = '';
+  document.getElementById('emptyState').classList.add('hidden');
+  document.getElementById('chatWrap').classList.remove('hidden');
+  conv.msgs.forEach(m => {
+    const qa = document.createElement('div');
+    qa.innerHTML =
+      '<div class="q-bubble"></div>' +
+      '<div class="a-block">' +
+        '<div class="ans"></div>' +
+        (m.meta ? '<div class="meta time"></div>' : '') +
+      '</div>';
+    qa.querySelector('.q-bubble').textContent = m.q;
+    qa.querySelector('.ans').innerHTML = formatAnswer(m.a);
+    if(m.meta) qa.querySelector('.meta.time').textContent = m.meta;
+    log.appendChild(qa);
+  });
+  scrollBottom();
+}
+function renderRecent(){
+  // 干什么：渲染「最近」= 历史会话列表（点击跳转到对应会话）
+  const order = loadOrder();
+  const convs = loadConvs();
+  const box = document.getElementById('recentList');
+  const ids = order.filter(id => convs[id]);
+  if(!ids.length){
+    box.innerHTML = '<div class="sb-item" style="color:var(--mut2);cursor:default">无聊天</div>';
+    return;
+  }
+  box.innerHTML = '';
+  ids.forEach(id => {
+    const c = convs[id];
+    const b = document.createElement('button');
+    b.className = 'sb-item';
+    b.style.cssText = 'display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    const t = c.title || '新对话';
+    b.textContent = t.length > 16 ? t.slice(0, 16) + '…' : t;
+    b.title = t + '（' + c.msgs.length + ' 轮）· 点击恢复该会话';
+    b.onclick = () => openConv(id);
+    box.appendChild(b);
+  });
+}
+
+// ============================================================
+//  七、输入框行为：Enter 提问 / Shift+Enter 换行 / 高度自适应
+// ============================================================
+const qEl = document.getElementById('q');
+qEl.addEventListener('keydown', e=>{
+  if(e.key === 'Enter' && !e.shiftKey){
+    e.preventDefault();
+    ask();
+  }
+});
+qEl.addEventListener('input', ()=>{
+  qEl.style.height = 'auto';
+  qEl.style.height = Math.min(qEl.scrollHeight, 140) + 'px';
+});
+renderRecent();
+</script>
+</body>
+</html>

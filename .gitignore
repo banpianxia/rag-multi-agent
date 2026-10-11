@@ -1,0 +1,23 @@
+# ===== 运行时产物与本地私密配置：一律不进版本库 / 交付包 =====
+# 1) 私密配置：.env 里有真实 API 密钥，只保留本机，交付时用 .env.example 复制
+.env
+.claude/settings.local.json
+
+# 2) Python 缓存
+__pycache__/
+*.py[cod]
+
+# 3) 知识库与索引产物（体积大、可由 medical_kb + raw_data 重建）
+chroma_db/
+2D_data/
+
+# 4) 上传的原始文件（可能含个人隐私资料）
+raw_data/
+
+# 5) 运行期落盘的状态文件
+_answer_cache.json
+_memory_event_log.jsonl
+
+# 6) 备份
+*.bak
+*~

@@ -1,0 +1,37 @@
+{
+    // 多智能体 RAG 系统调试配置（F:\论文代码）
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // 交互模式：终端问答，含人工确认环节
+            "name": "多Agent RAG - 交互模式",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}\\multi_agent_rag_service.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "ANONYMIZED_TELEMETRY": "False",
+                "HF_HUB_OFFLINE": "1",
+                "PYTHONIOENCODING": "utf-8"
+            },
+            "justMyCode": false
+        },
+        {
+            // Web 服务模式：浏览器演示 + HTTP 接口（8000）
+            "name": "多Agent RAG - Web服务(8000)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}\\multi_agent_rag_service.py",
+            "args": ["serve"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "ANONYMIZED_TELEMETRY": "False",
+                "HF_HUB_OFFLINE": "1",
+                "PYTHONIOENCODING": "utf-8"
+            },
+            "justMyCode": false
+        }
+    ]
+}
